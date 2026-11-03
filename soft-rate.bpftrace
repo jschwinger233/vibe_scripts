@@ -1,0 +1,49 @@
+#!/usr/bin/env bpftrace
+/*
+ * soft-rate.bt – measure softirq runtime per PID and vector
+ *
+ * Usage:
+ *   sudo bpftrace --unsafe soft-rate.bt <PID>
+ */
+
+/* Start timer when a softirq begins for the target PID */
+tracepoint:irq:softirq_entry
+/ pid == (uint32)$1 /
+{
+    @start[cpu] = nsecs;
+    @vec[cpu]   = args->vec;
+}
+
+/* Stop timer and accumulate delta when the softirq ends */
+tracepoint:irq:softirq_exit
+/ @start[cpu] > 0 /
+{
+    $delta = nsecs - @start[cpu];
+    @time[@vec[cpu]] += $delta;
+    delete(@start[cpu]);
+    delete(@vec[cpu]);
+}
+
+/* Print totals every second – explicit prints, no loop, no BEGIN */
+interval:s:1
+{
+    time("%H:%M:%S ");
+    printf("softirq time for PID %u (last 1s):\n", (uint32)$1);
+
+    if (@time[0]) { printf("  HI      : %llu us\n", @time[0] / 1000); }
+    if (@time[1]) { printf("  TIMER   : %llu us\n", @time[1] / 1000); }
+    if (@time[2]) { printf("  NET_TX  : %llu us\n", @time[2] / 1000); }
+    if (@time[3]) { printf("  NET_RX  : %llu us\n", @time[3] / 1000); }
+    if (@time[4]) { printf("  BLOCK   : %llu us\n", @time[4] / 1000); }
+    if (@time[5]) { printf("  IRQ_POLL: %llu us\n", @time[5] / 1000); }
+    if (@time[6]) { printf("  TASKLET : %llu us\n", @time[6] / 1000); }
+    if (@time[7]) { printf("  SCHED   : %llu us\n", @time[7] / 1000); }
+    if (@time[8]) { printf("  HRTIMER : %llu us\n", @time[8] / 1000); }
+    if (@time[9]) { printf("  RCU     : %llu us\n", @time[9] / 1000); }
+
+    $total_ns = @time[0] + @time[1] + @time[2] + @time[3] + @time[4] +
+                @time[5] + @time[6] + @time[7] + @time[8] + @time[9];
+    printf("  TOTAL   : %llu us\n\n", $total_ns / 1000);
+
+    clear(@time);
+}
