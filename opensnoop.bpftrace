@@ -1,0 +1,16 @@
+#!/usr/bin/env bpftrace
+// For bpftrace v0.14.0
+// Usage: bpftrace opensnoop.bt "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
+//        or any other filename you want to watch
+
+tracepoint:syscalls:sys_enter_open,
+tracepoint:syscalls:sys_enter_openat,
+tracepoint:syscalls:sys_enter_openat2
+/str(args->filename) == str($1)/
+{
+    printf("pid: %-7d %-16s  |  ppid: %-7d %-16s  |  gppid: %-7d %-16s  |  gggpid: %-7d %-16s\n",
+           pid, comm,
+           curtask->real_parent->tgid, curtask->real_parent->comm,
+           curtask->real_parent->real_parent->tgid, curtask->real_parent->real_parent->comm,
+           curtask->real_parent->real_parent->real_parent->tgid, curtask->real_parent->real_parent->real_parent->comm);
+}
